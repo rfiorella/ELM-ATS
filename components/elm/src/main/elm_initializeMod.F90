@@ -60,7 +60,6 @@ contains
     ! !USES:
     use elm_varpar                , only: elm_varpar_init, natpft_lb, natpft_ub
     use elm_varpar                , only: cft_lb, cft_ub, maxpatch_glcmec
-    use elm_varpar                , only: mxpft, numveg, mxpft_nc, numpft
     use elm_varpar                , only: update_pft_array_bounds
     use elm_varpar                , only: surfpft_lb, surfpft_ub
     use elm_varcon                , only: elm_varcon_init
@@ -145,8 +144,8 @@ contains
        ! in the following call) for FATES runs
        call ELMFatesGlobals1()
        call update_pft_array_bounds()
-    end if    
-    
+    end if
+
     call elm_petsc_init()
     call init_soil_temperature()
 
@@ -196,8 +195,16 @@ contains
     case ("round_robin")
        call decompInit_lnd(ni, nj, amask)
        deallocate(amask)
+       if (use_ats) then
+         call endrun(msg='ERROR elm_initializeMod: '//&
+              trim(domain_decomp_type) // ' domain_decomp_type not supported with use_ats')
+       end if
     case ("graph_partitioning")
        call decompInit_lnd_using_gp(ni, nj, cellsOnCell, nCells_loc, maxEdges, amask)
+       if (use_ats) then
+         call endrun(msg='ERROR elm_initializeMod: '//&
+              trim(domain_decomp_type) // ' domain_decomp_type not supported with use_ats')
+       end if
     case ("simple")
       call decompInit_lnd_simple(ni, nj, amask)
       deallocate(amask)
@@ -245,24 +252,24 @@ contains
           call shr_sys_flush(iulog)
        endif
 
-       call surfrd_get_topo(ldomain, flndtopo)  
-    endif    
-    
+       call surfrd_get_topo(ldomain, flndtopo)
+    endif
+
     if (fsurdat /= " " .and. use_top_solar_rad) then
        if (masterproc) then
           write(iulog,*) 'Attempting to read topo parameters for TOP solar radiation parameterization from ',trim(fsurdat)
           call shr_sys_flush(iulog)
        endif
-       call surfrd_get_topo_for_solar_rad(ldomain, fsurdat)  
+       call surfrd_get_topo_for_solar_rad(ldomain, fsurdat)
 
     endif
-    
+
     !-------------------------------------------------------------------------
     ! Topounit
     !-------------------------------------------------------------------------
     call topounit_varcon_init(begg, endg,fsurdat,ldomain)  ! Topounits
     !-------------------------------------------------------------------------
-    
+
     !-------------------------------------------------------------------------
     ! Initialize urban model input (initialize urbinp data structure)
     ! This needs to be called BEFORE the call to surfrd_get_data since
@@ -272,12 +279,12 @@ contains
 
     ! Allocate surface grid dynamic memory (just gridcell bounds dependent)
 
-    allocate (wt_lunit     (begg:endg,1:max_topounits, max_lunit           )) 
+    allocate (wt_lunit     (begg:endg,1:max_topounits, max_lunit           ))
     allocate (urban_valid  (begg:endg,1:max_topounits                      ))
-    !allocate (wt_nat_patch (begg:endg,1:max_topounits, surfpft_lb:surfpft_ub ))
-    !allocate (wt_cft       (begg:endg,1:max_topounits, cft_lb:cft_ub       ))
-    !allocate (fert_cft     (begg:endg,1:max_topounits, cft_lb:cft_ub       ))
-    !allocate (fert_p_cft   (begg:endg,1:max_topounits, cft_lb:cft_ub       ))
+    allocate (wt_nat_patch (begg:endg,1:max_topounits, surfpft_lb:surfpft_ub ))
+    allocate (wt_cft       (begg:endg,1:max_topounits, cft_lb:cft_ub       ))
+    allocate (fert_cft     (begg:endg,1:max_topounits, cft_lb:cft_ub       ))
+    allocate (fert_p_cft   (begg:endg,1:max_topounits, cft_lb:cft_ub       ))
     if (create_glacier_mec_landunit) then
        allocate (wt_glc_mec  (begg:endg,1:max_topounits, maxpatch_glcmec))
        allocate (topo_glc_mec(begg:endg,1:max_topounits, maxpatch_glcmec))
@@ -285,8 +292,8 @@ contains
        allocate (wt_glc_mec  (1,1,1))
        allocate (topo_glc_mec(1,1,1))
     endif
-    
-    allocate (wt_tunit  (begg:endg,1:max_topounits  )) 
+
+    allocate (wt_tunit  (begg:endg,1:max_topounits  ))
     allocate (elv_tunit (begg:endg,1:max_topounits  ))
     allocate (slp_tunit (begg:endg,1:max_topounits  ))
     allocate (asp_tunit (begg:endg,1:max_topounits  ))
@@ -299,14 +306,6 @@ contains
     ! Independent of model resolution, Needs to stay before surfrd_get_data
 
     call pftconrd()
-    ! if by user-defined PFT (numbers and names), 'numpft/mxpft_nc' may be changed including other derived indices
-    !
-    ! a few arrays allocation previously done above is moved here i.e. after this 'pftconrd' call
-    allocate (wt_nat_patch (begg:endg,1:max_topounits, surfpft_lb:surfpft_ub ))
-    allocate (wt_cft       (begg:endg,1:max_topounits, cft_lb:cft_ub       ))
-    allocate (fert_cft     (begg:endg,1:max_topounits, cft_lb:cft_ub       ))
-    allocate (fert_p_cft   (begg:endg,1:max_topounits, cft_lb:cft_ub       ))
-
     call soilorder_conrd()
 
     ! Read in FATES parameter values early in the call sequence as well
@@ -316,7 +315,7 @@ contains
     if (use_fates) then
        call FatesReadPFTs()
     end if
-    
+
     ! Read surface dataset and set up subgrid weight arrays
     call surfrd_get_data(begg, endg, ldomain, fsurdat)
 
@@ -330,7 +329,7 @@ contains
 
     end if
 
-    
+
     ! ------------------------------------------------------------------------
     ! Determine decomposition of subgrid scale topounits, landunits, topounits, columns, patches
     ! ------------------------------------------------------------------------
@@ -354,12 +353,12 @@ contains
 
     ! Initialize the gridcell data types
     call grc_pp%Init (bounds_proc%begg_all, bounds_proc%endg_all)
-    
+
     ! Read topounit information from fsurdat
     if (has_topounit) then
-         call surfrd_topounit_data(begg, endg, fsurdat)         
+         call surfrd_topounit_data(begg, endg, fsurdat)
     end if
-    
+
     ! Initialize the topographic unit data types
     call top_pp%Init (bounds_proc%begt_all, bounds_proc%endt_all) ! topology and physical properties
     call top_as%Init (bounds_proc%begt_all, bounds_proc%endt_all) ! atmospheric state variables (forcings)
@@ -383,11 +382,14 @@ contains
 
     ! Build hierarchy and topological info for derived types
     ! This is needed here for the following call to decompInit_glcp
-
-    call initGridCells()
+    if (use_ats) then
+      call initGridCells_ats()
+    else
+      call initGridCells()
+    endif
 
     ! Set global seg maps for gridcells, topounits, landlunits, columns and patches
-    !if(max_topounits > 1) then 
+    !if(max_topounits > 1) then
     !   if (create_glacier_mec_landunit) then
     !      call decompInit_gtlcp(ns, ni, nj, ldomain%glcmask,ldomain%num_tunits_per_grd)
     !   else
@@ -406,7 +408,7 @@ contains
     call t_startf('init_filters')
     call allocFilters()
     call t_stopf('init_filters')
-    
+
     nclumps = get_proc_clumps()
     !$OMP PARALLEL DO PRIVATE (nc, bounds_clump)
     do nc = 1, nclumps
@@ -587,7 +589,7 @@ contains
     ! ------------------------------------------------------------------------
     ! Initialize time manager
     ! ------------------------------------------------------------------------
-    if (nsrest == nsrStartup) then  
+    if (nsrest == nsrStartup) then
        call timemgr_init()
     else
        call restFile_getfile(file=fnamer, path=pnamer)
@@ -596,14 +598,14 @@ contains
        call restFile_close( ncid=ncid )
        call timemgr_restart()
     end if
-    
+
     ! ------------------------------------------------------------------------
     ! Pass model timestep info to FATES
     ! ------------------------------------------------------------------------
     if(use_fates) then
        call ELMFatesTimesteps()
     end if
-    
+
     ! ------------------------------------------------------------------------
     ! Initialize daylength from the previous time step (needed so prev_dayl can be set correctly)
     ! ------------------------------------------------------------------------
@@ -730,7 +732,7 @@ contains
     end if
 
     call cnstate_vars%initAccBuffer(bounds_proc)
-    
+
     if (use_fates) then
       call alm_fates%InitAccBuffer(bounds_proc)
    end if
